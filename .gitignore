@@ -1,5 +1,26 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+*.js
+*.js.map
+
+# Environment variables
 .env
+
+# Logs
 *.log
-.DS_Store 
+
+# OS files
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+
+# ESLint
+.eslintcache
+
+# TypeScript
+*.tsbuildinfo 
