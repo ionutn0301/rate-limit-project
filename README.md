@@ -1,165 +1,326 @@
-# Rate Limit Project
+# 🚦 Rate Limit Project
 
-A Node.js application demonstrating different rate limiting strategies using Express.js.
+A production-ready Node.js API rate limiting solution demonstrating multiple rate limiting algorithms with pluggable storage backends. Built with TypeScript, Express.js, and best practices for enterprise applications.
 
-## Features
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-16+-green.svg)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-4.18-lightgrey.svg)](https://expressjs.com/)
+[![License](https://img.shields.io/badge/License-ISC-yellow.svg)](LICENSE)
 
-- Two types of rate limiting implementations:
-  - Fixed Window Rate Limiting (used in `/foo` endpoint)
-  - Sliding Window Rate Limiting (used in `/bar` endpoint)
-- Multiple storage backends:
-  - In-memory storage (for fixed window)
-  - Redis storage (for sliding window)
-- Configurable rate limits per client
-- Authentication via Bearer token
-- Request logging
-- Global error handling
+## 🌟 Features
 
-## Prerequisites
+### Rate Limiting Strategies
 
-- Node.js (v16 or higher)
-- Redis (for sliding window rate limiting)
-- TypeScript (v5.3.3 or higher)
+| Strategy | Use Case | Pros | Cons |
+|----------|----------|------|------|
+| **Fixed Window** | High-throughput APIs, simple use cases | Simple, memory efficient, fast | Susceptible to burst traffic at window boundaries |
+| **Sliding Window Log** | Precise rate limiting, financial APIs | Accurate, no boundary bursts | Higher memory usage |
 
-## Dependencies
+### Key Capabilities
 
-### Core Dependencies
-- Express.js (v4.18.3) - Web framework
-- Redis (v5.1.1) - For persistent storage
-- dotenv (v16.5.0) - Environment configuration
+- 🔄 **Multiple Strategies**: Choose between Fixed Window and Sliding Window algorithms
+- 💾 **Pluggable Storage**: In-memory (development) or Redis (production/distributed)
+- 👥 **Per-Client Limits**: Configure different rate limits for different API clients
+- 🛣️ **Per-Endpoint Limits**: Different limits for different routes
+- 📊 **Rate Limit Headers**: Standard `X-RateLimit-*` headers for client transparency
+- 🧪 **Comprehensive Tests**: Unit tests demonstrating algorithm differences
+- 📝 **Full TypeScript**: Type-safe implementation with interfaces
 
-### Development Dependencies
-- Jest (v29.7.0) - Testing framework
-- ESLint (v8.57.0) - Code linting
-- Prettier (v3.2.5) - Code formatting
-- TypeScript (v5.3.3) - Type checking and compilation
+## 🏗️ Architecture
 
-## Installation
-
-1. Clone the repository
-2. Install dependencies:
-```bash
-npm install
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Express Application                     │
+├─────────────────────────────────────────────────────────────┤
+│  Middleware Pipeline                                         │
+│  ┌─────────┐  ┌──────────┐  ┌───────────────┐  ┌─────────┐ │
+│  │ Logger  │→ │   Auth   │→ │  Rate Limiter │→ │ Handler │ │
+│  └─────────┘  └──────────┘  └───────────────┘  └─────────┘ │
+├─────────────────────────────────────────────────────────────┤
+│  Rate Limiting Strategies (Interchangeable)                  │
+│  ┌─────────────────────┐  ┌────────────────────────────┐   │
+│  │ Fixed Window        │  │ Sliding Window Log         │   │
+│  │ • Counter per window│  │ • Timestamp array          │   │
+│  │ • O(1) operations   │  │ • Precise tracking         │   │
+│  └─────────────────────┘  └────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│  Storage Backends (Pluggable)                                │
+│  ┌─────────────────────┐  ┌────────────────────────────┐   │
+│  │ Memory Storage      │  │ Redis Storage              │   │
+│  │ • Fast, ephemeral   │  │ • Persistent, distributed  │   │
+│  └─────────────────────┘  └────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-3. Create a `.env` file in the root directory:
-```env
-# Redis Configuration
-REDIS_URL=redis://localhost:6379
+## 📖 Algorithm Deep Dive
 
+### Fixed Window Counter
+
+The Fixed Window algorithm divides time into discrete intervals and counts requests within each interval.
+
+```
+Time: 0s         60s        120s       180s
+      |----------|----------|----------|
+Window:    1          2          3
+Count:   [0→10]     [0→10]     [0→10]
+```
+
+**How it works:**
+1. Calculate current window: `windowId = floor(now / windowMs)`
+2. If new window, reset counter to 0
+3. If `counter >= maxRequests`, reject request
+4. Otherwise, increment counter and allow
+
+**Boundary Issue Example:**
+```
+Window 1 (00:00-00:59): 10 requests at 00:59 ✓
+Window 2 (01:00-01:59): 10 requests at 01:00 ✓
+Result: 20 requests in 2 seconds! (burst at boundary)
+```
+
+### Sliding Window Log
+
+The Sliding Window Log algorithm tracks the timestamp of each individual request, providing precise rate limiting without boundary issues.
+
+```
+Time: 0s   10s   20s   30s   40s   50s   60s   70s
+      |-----|-----|-----|-----|-----|-----|-----|
+Timestamps: [0, 10, 20, 30, 40]
+                              ↑ At t=50s, window looks back 60s
+                                Still has 5 requests, can accept 5 more
+```
+
+**How it works:**
+1. Retrieve stored timestamps array
+2. Remove timestamps older than `(now - windowMs)`
+3. If `timestamps.length >= maxRequests`, reject
+4. Otherwise, add current timestamp and allow
+
+**No Boundary Issue:**
+```
+Requests at 00:59: 10 timestamps stored
+At 01:00: All 10 timestamps still within 60s window
+Result: New requests blocked until 01:59 (smooth limiting)
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js v16 or higher
+- Redis (optional, for distributed rate limiting)
+- npm or yarn
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/rate-limit-project.git
+cd rate-limit-project
+
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.example .env
+```
+
+### Environment Configuration
+
+```env
 # Server Configuration
 PORT=3000
+
+# Redis Configuration (optional)
+REDIS_URL=redis://localhost:6379
 ```
 
-## Running the Application
+### Running the Application
 
-1. Start Redis server (required for sliding window rate limiting)
-2. Start the application:
 ```bash
-# Development mode with hot reloading
+# Development mode (hot reload)
 npm run dev
 
-# Production mode
+# Production build
 npm run build
 npm start
+
+# Run tests
+npm test
+
+# Lint code
+npm run lint
+npm run lint:fix
+
+# Format code
+npm run format
 ```
 
-## Development Tools
+## 📡 API Usage
 
-The project includes several development tools to maintain code quality:
+### Authentication
+
+All endpoints require Bearer token authentication using client IDs:
 
 ```bash
-# Linting
-npm run lint        # Check for linting issues
-npm run lint:fix    # Fix linting issues automatically
-
-# Code formatting
-npm run format      # Format code with Prettier
-npm run format:check # Check if code is properly formatted
+curl -H "Authorization: Bearer client-1" http://localhost:3000/foo
 ```
 
-## Testing the Endpoints
+### Available Endpoints
 
-The application supports two clients with different rate limits:
+| Endpoint | Rate Limit Strategy | Description |
+|----------|---------------------|-------------|
+| `GET /foo` | Fixed Window | Demo endpoint with fixed window limiting |
+| `GET /bar` | Sliding Window | Demo endpoint with sliding window limiting |
 
-1. `client-1`:
-   - `/foo`: 10 requests per minute (fixed window)
-   - `/bar`: 5 requests per minute (sliding window)
+### Client Rate Limits
 
-2. `client-2`:
-   - `/foo`: 20 requests per minute (fixed window)
-   - `/bar`: 10 requests per minute (sliding window)
+| Client | `/foo` Limit | `/bar` Limit |
+|--------|-------------|--------------|
+| `client-1` | 10 req/min | 5 req/min |
+| `client-2` | 20 req/min | 10 req/min |
 
-### Example Requests
+### Response Headers
 
-1. Successful request to `/foo`:
-```bash
-curl -X GET "http://localhost:3000/foo" \
-  -H "Authorization: Bearer client-1"
+Every response includes rate limit information:
+
+```
+X-RateLimit-Limit: 10
+X-RateLimit-Window-Ms: 60000
+X-RateLimit-Strategy: fixed
+X-RateLimit-Remaining: 7
 ```
 
-Response:
+### Rate Limit Exceeded Response
+
 ```json
 {
-  "success": true
+  "error": "Rate limit exceeded",
+  "code": "RATE_LIMIT_EXCEEDED",
+  "retryAfter": 60,
+  "limit": 10,
+  "windowMs": 60000
 }
 ```
 
-2. Rate limited request to `/foo`:
-```bash
-# Make 11 requests in quick succession
-for i in {1..11}; do
-  curl -X GET "http://localhost:3000/foo" \
-    -H "Authorization: Bearer client-1"
-done
-```
+## 🧪 Testing
 
-Response (on the 11th request):
-```json
-{
-  "error": "rate limit exceeded"
-}
-```
-
-3. Successful request to `/bar`:
-```bash
-curl -X GET "http://localhost:3000/bar" \
-  -H "Authorization: Bearer client-2"
-```
-
-Response:
-```json
-{
-  "success": true
-}
-```
-
-## Running Tests
-
-The project uses Jest as the testing framework. Tests are located in the `src/tests` directory.
+The test suite demonstrates the key differences between algorithms:
 
 ```bash
 npm test
 ```
 
-## Configuration
+### Test Coverage
 
-The project includes several configuration files:
+- ✅ Basic rate limiting (allow/block)
+- ✅ Window reset behavior
+- ✅ Client isolation
+- ✅ Endpoint isolation
+- ✅ Remaining request calculation
+- ✅ **Algorithm comparison** (demonstrates boundary burst difference)
 
-- `tsconfig.json` - TypeScript configuration
-- `.eslintrc.json` - ESLint rules
-- `.prettierrc` - Prettier formatting rules
-- `jest.config.js` - Jest testing configuration
+### Key Test: Strategy Comparison
 
-## Project Structure
+```typescript
+it('should demonstrate the difference between fixed and sliding window', async () => {
+  // Set time just before a window boundary
+  jest.setSystemTime(windowMs - 100);
+  
+  // Both accept maxRequests...
+  // Cross the window boundary...
+  
+  // Fixed window: Allows request (new window) - potential burst!
+  expect(fixedResult).toBe(false);
+  
+  // Sliding window: Still blocks (requests in sliding window)
+  expect(slidingResult).toBe(true);
+});
+```
 
-The project follows a modular architecture with the following key components:
+## 📁 Project Structure
 
-- `src/middleware/`: Contains authentication, rate limiting, logging, and error handling middleware
-- `src/services/`: 
-  - `rate-limit/`: Implements different rate limiting strategies
-  - `storage/`: Implements storage backends (memory and Redis)
-- `src/routes/`: Defines API endpoints
-- `src/models/`: Contains TypeScript interfaces and types
-- `src/config/`: Contains client configurations and rate limits
-- `src/tests/`: Contains test suites for rate limiting implementations
+```
+src/
+├── app.ts                    # Express application setup
+├── config/
+│   └── clients.ts            # Client rate limit configurations
+├── middleware/
+│   ├── auth.ts               # Bearer token authentication
+│   ├── error-handler.ts      # Global error handling
+│   ├── logger.ts             # Request/response logging
+│   └── rate-limit.ts         # Rate limiting middleware factory
+├── models/
+│   ├── client.ts             # Client configuration interface
+│   ├── rate-limit-storage.ts # Storage interface
+│   ├── rate-limit-strategy.ts# Strategy interface
+│   ├── rate-limit.ts         # Rate limit model
+│   └── types.ts              # Shared type definitions
+├── routes/
+│   ├── bar.ts                # /bar endpoint (sliding window)
+│   └── foo.ts                # /foo endpoint (fixed window)
+├── services/
+│   ├── rate-limit/
+│   │   ├── fixed-window.ts   # Fixed window implementation
+│   │   └── sliding-window.ts # Sliding window implementation
+│   └── storage/
+│       ├── memory-storage.ts # In-memory storage
+│       └── redis-storage.ts  # Redis storage
+└── tests/
+    └── rate-limit.test.ts    # Comprehensive test suite
+```
+
+## 🔧 Extending the Project
+
+### Adding a New Rate Limiting Strategy
+
+1. Implement the `IRateLimitStrategy` interface:
+
+```typescript
+import { IRateLimitStrategy } from '../models/rate-limit-strategy.js';
+
+export class TokenBucketRateLimiter implements IRateLimitStrategy {
+  async isRateLimited(
+    clientId: string,
+    endpoint: string,
+    maxRequests: number,
+    windowMs: number,
+  ): Promise<boolean> {
+    // Your implementation
+  }
+}
+```
+
+2. Register in the middleware factory
+
+### Adding a New Storage Backend
+
+1. Implement the `IRateLimitStorage` interface:
+
+```typescript
+import { IRateLimitStorage } from '../models/rate-limit-storage.js';
+
+export class PostgresStorage implements IRateLimitStorage {
+  async get(key: string): Promise<number | number[] | null> { /* ... */ }
+  async set(key: string, value: number | number[]): Promise<void> { /* ... */ }
+  async increment(key: string): Promise<void> { /* ... */ }
+  async decrement(key: string): Promise<void> { /* ... */ }
+  async reset(key: string): Promise<void> { /* ... */ }
+}
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the ISC License - see the [LICENSE](LICENSE) file for details.
+
+## 👤 Author
+
+**Necula Ionut-Alexandru** - [ionutn0301@gmail.com](mailto:ionutn0301@gmail.com)
+
+---
+
+⭐ If you found this project useful, please consider giving it a star!
